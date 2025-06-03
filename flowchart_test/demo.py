@@ -510,6 +510,23 @@ with gr.Blocks(title="AI Flowchart Creator", theme=gr.themes.Soft()) as demo:
                 placeholder="Enter label for new node"
             )
             add_node_btn = gr.Button("➕ Add Node", size="sm")
+            
+            gr.Markdown("### 🗣️ Natural Language Editing")
+            edit_command = gr.Textbox(
+                label="Edit with Natural Language",
+                placeholder="e.g., 'Add a decision node after step 2 asking about temperature'",
+                lines=2
+            )
+            edit_btn = gr.Button("🎯 Apply Edit", variant="primary")
+            edit_message = gr.Textbox(label="Edit Result", interactive=False)
+            
+            gr.Markdown("### 💡 AI Suggestions")
+            suggest_btn = gr.Button("Get Improvement Suggestions", variant="secondary")
+            suggestions = gr.Textbox(
+                label="Suggested Improvements",
+                interactive=False,
+                lines=5
+            )
         
         with gr.Column(scale=2):
             # Create the flowchart interface
@@ -597,6 +614,22 @@ with gr.Blocks(title="AI Flowchart Creator", theme=gr.themes.Soft()) as demo:
         flowchart_creator.update_visualization,
         inputs=[flowchart_json],
         outputs=[flowchart_html]
+    )
+
+    edit_btn.click(
+        flowchart_editor.edit_with_natural_language,
+        inputs=[flowchart_json, edit_command],
+        outputs=[flowchart_json, edit_message]
+    ).then(
+        flowchart_creator.update_visualization,
+        inputs=[flowchart_json],
+        outputs=[flowchart_html]
+    )
+
+    suggest_btn.click(
+        flowchart_editor.get_improvement_suggestions,
+        inputs=[flowchart_json],
+        outputs=[suggestions]
     )
 
 if __name__ == "__main__":

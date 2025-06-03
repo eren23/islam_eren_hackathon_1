@@ -1,10 +1,12 @@
 import gradio as gr
 import json
+from flowchart_nlp import FlowchartNLP
 
 class FlowchartEditor:
     def __init__(self):
         self.selected_node = None
         self.selected_edge = None
+        self.nlp_editor = FlowchartNLP()
     
     def edit_node(self, flowchart_data, node_id, new_label):
         """Edit node label"""
@@ -64,3 +66,14 @@ class FlowchartEditor:
         data = json.loads(flowchart_data) if isinstance(flowchart_data, str) else flowchart_data
         data["edges"] = [e for e in data.get("edges", []) if e["id"] != edge_id]
         return data 
+
+    def edit_with_natural_language(self, flowchart_data, command):
+        """Edit flowchart using natural language command"""
+        data = json.loads(flowchart_data) if isinstance(flowchart_data, str) else flowchart_data
+        updated_data, message = self.nlp_editor.parse_edit_command(data, command)
+        return updated_data, message
+
+    def get_improvement_suggestions(self, flowchart_data):
+        """Get AI-powered improvement suggestions"""
+        data = json.loads(flowchart_data) if isinstance(flowchart_data, str) else flowchart_data
+        return self.nlp_editor.suggest_improvements(data) 
