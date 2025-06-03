@@ -124,7 +124,7 @@ class FlowchartCreator:
         return self.render_flowchart_html(flowchart_data)
     
     def render_flowchart_html(self, flowchart_data):
-        """Render flowchart as HTML/CSS visualization"""
+        """Render flowchart as HTML/CSS visualization with drag-drop support"""
         if not flowchart_data or not isinstance(flowchart_data, dict):
             return "<div>No flowchart data available</div>"
         
@@ -138,84 +138,109 @@ class FlowchartCreator:
         svg_width = max_x + 200
         svg_height = max_y + 100
         
+        # Add drag-drop JavaScript
         html = f"""
         <div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; background: #f9f9f9;">
-            <svg width="{svg_width}" height="{svg_height}" style="background: white; border-radius: 4px;">
+            <svg width="{svg_width}" height="{svg_height}" style="background: white; border-radius: 4px;"
+                 onmousedown="startDrag(event)" onmousemove="drag(event)" onmouseup="endDrag(event)">
+                <script>
+                    let selectedNode = null;
+                    let offset = {{x: 0, y: 0}};
+                    
+                    function startDrag(event) {{
+                        const target = event.target.closest('.node');
+                        if (target) {{
+                            selectedNode = target;
+                            const rect = target.getBoundingClientRect();
+                            offset.x = event.clientX - rect.left;
+                            offset.y = event.clientY - rect.top;
+                        }}
+                    }}
+                    
+                    function drag(event) {{
+                        if (selectedNode) {{
+                            event.preventDefault();
+                            const x = event.clientX - offset.x;
+                            const y = event.clientY - offset.y;
+                            selectedNode.setAttribute('transform', `translate(${{x}},${{y}})`);
+                        }}
+                    }}
+                    
+                    function endDrag(event) {{
+                        selectedNode = null;
+                    }}
+                </script>
                 <defs>
                     <marker id="arrowhead" markerWidth="10" markerHeight="7" 
-                     refX="10" refY="3.5" orient="auto">
+                            refX="10" refY="3.5" orient="auto">
                         <polygon points="0 0, 10 3.5, 0 7" fill="#666" />
                     </marker>
                 </defs>
         """
         
-        # Draw edges first (so they appear behind nodes)
+        # Draw edges
         for edge in edges:
             source_node = next((n for n in nodes if n["id"] == edge["source"]), None)
             target_node = next((n for n in nodes if n["id"] == edge["target"]), None)
             
             if source_node and target_node:
-                x1 = source_node["position"]["x"] + 75  # Center of node
+                x1 = source_node["position"]["x"] + 75
                 y1 = source_node["position"]["y"] + 30
                 x2 = target_node["position"]["x"] + 75
                 y2 = target_node["position"]["y"] + 10
                 
-                # Draw line
-                html += f'''
-                    <line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" 
-                          stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
-                '''
+                html += f"""
+                    <g class="edge" data-id="{edge['id']}">
+                        <line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" 
+                              stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+                """
                 
-                # Add edge label if exists
-                label = edge.get("label", "")
-                if label:
+                if edge.get("label"):
                     mid_x = (x1 + x2) / 2
-                    mid_y = (y1 + y2) / 2
-                    html += f'''
-                        <text x="{mid_x}" y="{mid_y-5}" text-anchor="middle" 
+                    mid_y = (y1 + y2) / 2 - 5
+                    html += f"""
+                        <text x="{mid_x}" y="{mid_y}" text-anchor="middle" 
                               fill="#333" font-size="12" font-family="Arial">
-                            {label}
+                            {edge['label']}
                         </text>
-                    '''
+                    """
+                
+                html += "</g>"
         
-        # Draw nodes
+        # Draw nodes with drag-drop support
         for node in nodes:
             x = node["position"]["x"]
             y = node["position"]["y"]
             label = node["data"]["label"]
             node_type = node.get("type", "process")
             
-            # Different shapes for different types
-            if node_type == "start" or node_type == "end":
-                # Rounded rectangle
-                html += f'''
-                    <rect x="{x}" y="{y}" width="150" height="40" rx="20" ry="20"
-                          fill="#e1f5fe" stroke="#01579b" stroke-width="2" />
-                '''
-            elif node_type == "decision":
-                # Diamond (using polygon)
-                cx, cy = x + 75, y + 20
-                html += f'''
-                    <polygon points="{cx},"{y}" {x+150},{cy} {cx},{y+40} {x},{cy}"
-                             fill="#fff3e0" stroke="#e65100" stroke-width="2" />
-                '''
-            else:
-                # Regular rectangle
-                html += f'''
-                    <rect x="{x}" y="{y}" width="150" height="40"
-                          fill="#f3e5f5" stroke="#4a148c" stroke-width="2" />
-                '''
+            html += f'<g class="node" data-id="{node["id"]}" transform="translate({x},{y})">'
             
-            # Add text
-            text_x = x + 75
-            text_y = y + 25
-            html += f'''
-                <text x="{text_x}" y="{text_y}" text-anchor="middle" 
+            if node_type in ("start", "end"):
+                html += f"""
+                    <rect x="0" y="0" width="150" height="40" rx="20" ry="20"
+                          fill="#e1f5fe" stroke="#01579b" stroke-width="2" />
+                """
+            elif node_type == "decision":
+                cx, cy = 75, 20
+                html += f"""
+                    <polygon points="{cx},0 150,{cy} {cx},40 0,{cy}"
+                             fill="#fff3e0" stroke="#e65100" stroke-width="2" />
+                """
+            else:
+                html += f"""
+                    <rect x="0" y="0" width="150" height="40"
+                          fill="#f3e5f5" stroke="#4a148c" stroke-width="2" />
+                """
+            
+            html += f"""
+                <text x="75" y="25" text-anchor="middle" 
                       fill="#333" font-size="14" font-family="Arial, sans-serif"
                       font-weight="bold">
                     {label}
                 </text>
-            '''
+            </g>
+            """
         
         html += """
             </svg>

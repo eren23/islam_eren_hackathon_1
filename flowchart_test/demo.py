@@ -4,6 +4,7 @@ from openai import OpenAI
 import os
 import json
 from dotenv import load_dotenv
+from interactive_features import FlowchartEditor
 
 # Load environment variables
 load_dotenv()
@@ -416,8 +417,9 @@ with gr.Blocks(title="AI Flowchart Creator", theme=gr.themes.Soft()) as demo:
     gr.Markdown("# 🔄 AI Flowchart Creator")
     gr.Markdown("Create detailed, comprehensive flowcharts with AI assistance!")
     
-    # Create flowchart component
+    # Initialize editors
     flowchart_creator = FlowchartCreator()
+    flowchart_editor = FlowchartEditor()
     
     with gr.Row():
         with gr.Column(scale=1):
@@ -461,6 +463,53 @@ with gr.Blocks(title="AI Flowchart Creator", theme=gr.themes.Soft()) as demo:
                 lines=8,
                 interactive=False
             )
+            
+            # Add editing section
+            gr.Markdown("### ✏️ Edit Flowchart")
+            with gr.Row():
+                node_id_input = gr.Textbox(
+                    label="Node ID",
+                    placeholder="Enter node ID to edit"
+                )
+                new_label_input = gr.Textbox(
+                    label="New Label",
+                    placeholder="Enter new label"
+                )
+                edit_node_btn = gr.Button("✏️ Edit Node", size="sm")
+            
+            with gr.Row():
+                source_id_input = gr.Textbox(
+                    label="Source ID",
+                    placeholder="Start node ID"
+                )
+                target_id_input = gr.Textbox(
+                    label="Target ID",
+                    placeholder="End node ID"
+                )
+                edge_label_input = gr.Textbox(
+                    label="Edge Label",
+                    placeholder="Optional edge label"
+                )
+                connect_btn = gr.Button("🔗 Connect Nodes", size="sm")
+            
+            with gr.Row():
+                delete_node_input = gr.Textbox(
+                    label="Delete Node",
+                    placeholder="Node ID to delete"
+                )
+                delete_node_btn = gr.Button("🗑️ Delete Node", size="sm", variant="stop")
+            
+            # Add node type selector
+            node_type_dropdown = gr.Dropdown(
+                choices=["process", "decision", "start", "end"],
+                value="process",
+                label="New Node Type"
+            )
+            new_node_label = gr.Textbox(
+                label="New Node Label",
+                placeholder="Enter label for new node"
+            )
+            add_node_btn = gr.Button("➕ Add Node", size="sm")
         
         with gr.Column(scale=2):
             # Create the flowchart interface
@@ -507,6 +556,47 @@ with gr.Blocks(title="AI Flowchart Creator", theme=gr.themes.Soft()) as demo:
         analyze_flowchart,
         inputs=[flowchart_json, question_input],
         outputs=[analysis_output]
+    )
+    
+    # Connect editing functionality
+    edit_node_btn.click(
+        lambda data, id, label: flowchart_editor.edit_node(data, id, label),
+        inputs=[flowchart_json, node_id_input, new_label_input],
+        outputs=[flowchart_json]
+    ).then(
+        flowchart_creator.update_visualization,
+        inputs=[flowchart_json],
+        outputs=[flowchart_html]
+    )
+    
+    connect_btn.click(
+        lambda data, src, tgt, lbl: flowchart_editor.connect_nodes(data, src, tgt, lbl),
+        inputs=[flowchart_json, source_id_input, target_id_input, edge_label_input],
+        outputs=[flowchart_json]
+    ).then(
+        flowchart_creator.update_visualization,
+        inputs=[flowchart_json],
+        outputs=[flowchart_html]
+    )
+    
+    delete_node_btn.click(
+        lambda data, id: flowchart_editor.delete_node(data, id),
+        inputs=[flowchart_json, delete_node_input],
+        outputs=[flowchart_json]
+    ).then(
+        flowchart_creator.update_visualization,
+        inputs=[flowchart_json],
+        outputs=[flowchart_html]
+    )
+    
+    add_node_btn.click(
+        lambda data, type, label: flowchart_editor.add_node(data, type, label),
+        inputs=[flowchart_json, node_type_dropdown, new_node_label],
+        outputs=[flowchart_json]
+    ).then(
+        flowchart_creator.update_visualization,
+        inputs=[flowchart_json],
+        outputs=[flowchart_html]
     )
 
 if __name__ == "__main__":
