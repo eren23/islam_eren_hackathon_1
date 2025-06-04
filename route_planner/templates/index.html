@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Route Planner</title>
+    {% if map_mode == 'google' %}
+    <script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}"></script>
+    {% else %}
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    {% endif %}
+    <style>
+        #map {
+            height: 500px;
+            width: 100%;
+            margin-top: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            margin-bottom: 10px;
+        }
+        .controls {
+            margin-bottom: 20px;
+        }
+        .location-info {
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Route Planner ({{ map_mode|upper }})</h1>
+        <div class="controls">
+            <label>
+                <input type="radio" name="locationMode" value="auto" checked onchange="toggleLocationMode()"> Use my location
+            </label>
+            <label>
+                <input type="radio" name="locationMode" value="manual" onchange="toggleLocationMode()"> Select on map
+            </label>
+            <div class="location-info" id="locationInfo"></div>
+        </div>
+        <textarea id="routeRequest" placeholder="Describe your route requirements (e.g., 'I want to ride my bike for 10km with a beer break at 5km')"></textarea>
+        <button onclick="planRoute()">Plan Route</button>
+        <div id="map"></div>
+    </div>
+
+    <script>
+        let map;
+        let markers = [];
+        let routePath;
+        let startMarker = null;
+        const mapMode = "{{ map_mode }}";
+        let selectedLocation = null;
+
+        function initMap() {
+            if (mapMode === 'google') {
+                initGoogleMap();
+            } else {
+                initLeafletMap();
+            }
+        }
+
+        function initGoogleMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 13,
+                center: { lat: 0, lng: 0 }
+            });
+
+            map.addListener('click', function(e) {
+                if (document.querySelector('input[name="locationMode"]:checked').value === 'manual') {
+                    placeStartMarker(e.latLng.lat, e.latLng.lng);
+                }
+            });
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    const pos = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    };
+                    map.setCenter(pos);
+                    if (document.querySelector('input[name="locationMode"]:checked').value === 'auto') {
+                        placeStartMarker(pos.lat, pos.lng);
+                    }
+                });
+            }
+        }
+
+        function initLeafletMap() {
+            map = L.map('map').setView([0, 0], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            map.on('click', function(e) {
+                if (document.querySelector('input[name="locationMode"]:checked').value === 'manual') {
+                    placeStartMarker(e.latlng.lat, e.latlng.lng);
+                }
+            });
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    const pos = [position.coords.latitude, position.coords.longitude];
+                    map.setView(pos, 13);
+                    if (document.querySelector('input[name="locationMode"]:checked').value === 'auto') {
+                        placeStartMarker(position.coords.latitude, position.coords.longitude);
+                    }
+                });
+            }
+        }
+
+        function placeStartMarker(lat, lng) {
+            if (startMarker) {
+                if (mapMode === 'google') {
+                    startMarker.setMap(null);
+                } else {
+                    map.removeLayer(startMarker);
+                }
+            }
+
+            selectedLocation = { lat: lat, lng: lng };
+            updateLocationInfo();
+
+            if (mapMode === 'google') {
+                startMarker = new google.maps.Marker({
+                    position: { lat: lat, lng: lng },
+                    map: map,
+                    title: 'Start Point',
+                    icon: {
+                        url: 'http://maps.google.com/mapfiles/ms/icons/green-dot.png'
+                    }
+                });
+            } else {
+                startMarker = L.marker([lat, lng], {
+                    title: 'Start Point'
+                }).addTo(map);
+            }
+        }
+
+        function updateLocationInfo() {
+            const info = document.getElementById('locationInfo');
+            if (selectedLocation) {
+                info.textContent = `Selected start point: ${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`;
+            } else {
+                info.textContent = 'No start point selected';
+            }
+        }
+
+        function toggleLocationMode() {
+            const mode = document.querySelector('input[name="locationMode"]:checked').value;
+            if (mode === 'auto' && navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    placeStartMarker(position.coords.latitude, position.coords.longitude);
+                });
+            } else if (mode === 'manual') {
+                if (startMarker) {
+                    if (mapMode === 'google') {
+                        startMarker.setMap(null);
+                    } else {
+                        map.removeLayer(startMarker);
+                    }
+                    startMarker = null;
+                    selectedLocation = null;
+                    updateLocationInfo();
+                }
+            }
+        }
+
+        async function planRoute() {
+            if (!selectedLocation) {
+                alert('Please select a starting point first!');
+                return;
+            }
+
+            const request = document.getElementById('routeRequest').value;
+            
+            const response = await fetch('/plan_route', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    request: request,
+                    location: selectedLocation
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.error) {
+                alert('Error planning route: ' + data.error);
+                return;
+            }
+
+            if (mapMode === 'google') {
+                displayGoogleRoute(data);
+            } else {
+                displayLeafletRoute(data);
+            }
+        }
+
+        function displayGoogleRoute(data) {
+            // Clear previous markers and route
+            markers.forEach(marker => marker.setMap(null));
+            if (routePath) routePath.setMap(null);
+            
+            // Add markers for stops
+            data.stops.forEach(stop => {
+                const marker = new google.maps.Marker({
+                    position: stop.geometry.location,
+                    map: map,
+                    title: stop.name
+                });
+                markers.push(marker);
+            });
+
+            // Draw route
+            const path = data.route[0].overview_path;
+            routePath = new google.maps.Polyline({
+                path: path,
+                geodesic: true,
+                strokeColor: '#FF0000',
+                strokeOpacity: 1.0,
+                strokeWeight: 2
+            });
+            routePath.setMap(map);
+        }
+
+        function displayLeafletRoute(data) {
+            // Clear previous markers and route
+            markers.forEach(marker => map.removeLayer(marker));
+            markers = [];
+            if (routePath) map.removeLayer(routePath);
+            
+            // Add markers for stops
+            data.stops.forEach(stop => {
+                const marker = L.marker([
+                    stop.geometry.location.lat,
+                    stop.geometry.location.lng
+                ]).addTo(map);
+                markers.push(marker);
+                marker.bindPopup(stop.name);
+            });
+
+            // Draw route
+            routePath = L.polyline(data.route, {
+                color: 'red',
+                weight: 2
+            }).addTo(map);
+
+            // Fit bounds to show the entire route
+            map.fitBounds(routePath.getBounds());
+        }
+
+        window.onload = initMap;
+    </script>
+</body>
+</html> 
