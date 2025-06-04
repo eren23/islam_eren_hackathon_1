@@ -8,6 +8,9 @@ from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 from datetime import datetime
 import random
+import overpy
+import requests
+import math
 
 load_dotenv()
 
@@ -25,6 +28,9 @@ if MAP_MODE == "google":
     gmaps = googlemaps.Client(key=os.getenv("GOOGLE_MAPS_API_KEY"))
 else:
     geolocator = Nominatim(user_agent="route_planner")
+
+# Add this after other initializations
+overpass_api = overpy.Overpass()
 
 @app.route('/')
 def index():
@@ -44,7 +50,7 @@ def plan_route():
                 "HTTP-Referer": "http://localhost:5000",
                 "X-Title": "Route Planner",
             },
-            model="openai/gpt-4",
+            model="openai/gpt-4.1",
             messages=[
                 {
                     "role": "system",
@@ -111,33 +117,77 @@ def handle_google_maps_route(location, route_requirements):
 
 def handle_osm_route(location, route_requirements):
     try:
-        # For OSM, we'll create a varied route with waypoints
         lat, lng = location['lat'], location['lng']
+        total_distance = max(route_requirements['total_distance_km'], 0.5)
+        stop_at = min(route_requirements['stop_at_km'], total_distance)
         
-        # Values are already converted to float in plan_route
-        total_distance = max(route_requirements['total_distance_km'], 0.5)  # Minimum 0.5km
-        stop_at = min(route_requirements['stop_at_km'], total_distance)  # Ensure stop is not beyond total distance
+        # Find nearby roads that are suitable for cycling
+        radius = total_distance * 1000  # Convert to meters
+        query = f"""
+        [out:json];
+        (
+          way["highway"~"^(primary|secondary|tertiary|residential|cycleway|path)$"]
+              (around:{radius},{lat},{lng});
+        );
+        out body;
+        >;
+        out skel qt;
+        """
         
-        # Create waypoints for a varied route starting from the selected point
-        points = generate_varied_route(lat, lng, total_distance)
+        # Find potential stops (bars, cafes, etc.)
+        stop_query = f"""
+        [out:json];
+        (
+          node["amenity"="{route_requirements['stop_type']}"](around:{radius},{lat},{lng});
+        );
+        out body;
+        """
         
-        # Calculate stop point based on stop_at distance
-        stop_index = min(int((stop_at / total_distance) * len(points)), len(points) - 1)
-        stop_point = points[stop_index]
-        
-        # Add timestamp to stop name for uniqueness
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        
-        return jsonify({
-            'route': points,
-            'stops': [{
-                'geometry': {
-                    'location': {'lat': stop_point[0], 'lng': stop_point[1]},
-                },
-                'name': f"Suggested {route_requirements['stop_type']} ({timestamp})"
-            }],
-            'map_mode': 'osm'
-        })
+        try:
+            # Get roads
+            roads_result = overpass_api.query(query)
+            
+            # Get stops
+            stops_result = overpass_api.query(stop_query)
+            
+            if not roads_result.ways:
+                raise Exception("No suitable roads found in the area")
+            
+            # Create a route using the available roads
+            route_points = create_route_from_roads(
+                roads_result.ways,
+                (lat, lng),
+                total_distance,
+                stops_result.nodes
+            )
+            
+            # Find the best stop point
+            stop_point = find_best_stop(
+                route_points,
+                stops_result.nodes,
+                stop_at,
+                total_distance
+            )
+            
+            return jsonify({
+                'route': route_points,
+                'stops': [{
+                    'geometry': {
+                        'location': {
+                            'lat': float(stop_point.lat),
+                            'lng': float(stop_point.lon)
+                        },
+                    },
+                    'name': f"{getattr(stop_point, 'tags', {}).get('name', 'Unnamed')} ({route_requirements['stop_type']})"
+                }],
+                'map_mode': 'osm'
+            })
+            
+        except Exception as e:
+            # Fallback to simplified route if OpenStreetMap data fetch fails
+            print(f"OpenStreetMap data fetch failed: {str(e)}")
+            return create_simplified_route(lat, lng, total_distance, stop_at, route_requirements)
+            
     except Exception as e:
         return jsonify({
             'error': str(e),
@@ -146,67 +196,95 @@ def handle_osm_route(location, route_requirements):
             'map_mode': 'osm'
         }), 500
 
-def generate_varied_route(lat, lng, total_distance_km, num_points=40):
-    """Generate a varied route with different shapes based on distance"""
-    import math
+def create_route_from_roads(ways, start_point, target_distance, possible_stops):
+    """Create a route using actual roads"""
+    route_points = []
+    start_lat, start_lng = start_point
     
-    # Prevent division by zero and very small numbers that could cause issues
-    if abs(math.cos(math.radians(lat))) < 0.01:
-        lat_factor = 111.32  # km per degree at equator
-    else:
-        lat_factor = 111.32 * math.cos(math.radians(lat))
+    # Find the closest way to start point
+    closest_way = min(ways, key=lambda w: min(
+        geodesic(start_point, (float(n.lat), float(n.lon))).kilometers 
+        for n in w.nodes
+    ))
     
-    points = []
-    # Base radius in kilometers (minimum 0.1 km to prevent too small routes)
-    base_radius = max(total_distance_km / (2 * math.pi), 0.1)
+    # Start building the route
+    current_distance = 0
+    used_ways = set()
+    current_way = closest_way
     
-    # Choose a route type based on distance
-    if total_distance_km <= 5:
-        # Short routes: Create a figure-8 pattern
-        for i in range(num_points):
-            angle = (i / num_points) * 4 * math.pi
-            r = base_radius * math.sin(angle/2)
-            dlat = r * math.cos(angle) / 111.32
-            dlng = r * math.sin(angle) / lat_factor
-            points.append([lat + dlat, lng + dlng])
+    while current_distance < target_distance:
+        way_points = [(float(n.lat), float(n.lon)) for n in current_way.nodes]
+        route_points.extend(way_points)
+        used_ways.add(current_way.id)
+        
+        # Calculate current distance
+        for i in range(len(way_points)-1):
+            current_distance += geodesic(way_points[i], way_points[i+1]).kilometers
+        
+        # Find connected way that leads roughly in the right direction
+        connected_ways = [
+            w for w in ways 
+            if w.id not in used_ways and 
+            any(n.id == current_way.nodes[0].id or n.id == current_way.nodes[-1].id for n in w.nodes)
+        ]
+        
+        if not connected_ways:
+            break
+            
+        # Choose the next way that leads most towards the start point
+        current_way = min(connected_ways, key=lambda w: 
+            geodesic((float(w.nodes[0].lat), float(w.nodes[0].lon)), start_point).kilometers
+        )
     
-    elif total_distance_km <= 10:
-        # Medium routes: Create a cloverleaf pattern
-        for i in range(num_points):
-            angle = (i / num_points) * 2 * math.pi
-            r = base_radius * (1 + 0.5 * math.sin(2 * angle))
-            dlat = r * math.cos(angle) / 111.32
-            dlng = r * math.sin(angle) / lat_factor
-            points.append([lat + dlat, lng + dlng])
+    # Close the route by connecting back to start if possible
+    if route_points:
+        route_points.append((start_lat, start_lng))
     
-    else:
-        # Longer routes: Create a more complex pattern with random variations
-        for i in range(num_points):
-            angle = (i / num_points) * 2 * math.pi
-            # Add some random variation to the radius
-            variation = random.uniform(0.8, 1.2)
-            r = base_radius * variation * (1 + 0.3 * math.sin(3 * angle))
-            dlat = r * math.cos(angle) / 111.32
-            dlng = r * math.sin(angle) / lat_factor
-            points.append([lat + dlat, lng + dlng])
+    return [[lat, lng] for lat, lng in route_points]
+
+def find_best_stop(route_points, possible_stops, target_distance, total_distance):
+    """Find the best stop point near the desired distance"""
+    if not possible_stops:
+        # If no stops found, create a virtual one
+        target_index = int(len(route_points) * (target_distance / total_distance))
+        target_point = route_points[min(target_index, len(route_points) - 1)]
+        return type('VirtualStop', (), {
+            'lat': str(target_point[0]),
+            'lon': str(target_point[1]),
+            'tags': {'name': 'Suggested Stop'}
+        })
     
-    # Ensure the route is closed by adding the first point at the end
-    if points:
-        points.append(points[0])
+    # Calculate distance along route to each point
+    target_point = route_points[int(len(route_points) * (target_distance / total_distance))]
     
-    # Smooth the route
-    smoothed_points = []
-    window_size = 3
-    for i in range(len(points)):
-        # Calculate average of nearby points
-        window_start = max(0, i - window_size)
-        window_end = min(len(points), i + window_size + 1)
-        window_points = points[window_start:window_end]
-        avg_lat = sum(p[0] for p in window_points) / len(window_points)
-        avg_lng = sum(p[1] for p in window_points) / len(window_points)
-        smoothed_points.append([avg_lat, avg_lng])
+    # Find the closest actual stop to the target point
+    best_stop = min(possible_stops, key=lambda stop: 
+        geodesic((float(stop.lat), float(stop.lon)), target_point).kilometers
+    )
     
-    return smoothed_points
+    return best_stop
+
+def create_simplified_route(lat, lng, total_distance, stop_at, route_requirements):
+    """Fallback to simplified route if real roads can't be found"""
+    points = generate_varied_route(lat, lng, total_distance)
+    
+    # Calculate stop point based on stop_at distance
+    stop_index = int((stop_at / total_distance) * len(points))
+    stop_point = points[min(stop_index, len(points) - 1)]
+    
+    # Add timestamp to stop name for uniqueness
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    
+    return jsonify({
+        'route': points,
+        'stops': [{
+            'geometry': {
+                'location': {'lat': stop_point[0], 'lng': stop_point[1]},
+            },
+            'name': f"Suggested {route_requirements['stop_type']} ({timestamp})"
+        }],
+        'map_mode': 'osm'
+    })
 
 if __name__ == '__main__':
     app.run(debug=True) 
