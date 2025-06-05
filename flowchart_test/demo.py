@@ -464,53 +464,6 @@ with gr.Blocks(title="AI Flowchart Creator", theme=gr.themes.Soft()) as demo:
                 interactive=False
             )
             
-            # Add editing section
-            gr.Markdown("### ✏️ Edit Flowchart")
-            with gr.Row():
-                node_id_input = gr.Textbox(
-                    label="Node ID",
-                    placeholder="Enter node ID to edit"
-                )
-                new_label_input = gr.Textbox(
-                    label="New Label",
-                    placeholder="Enter new label"
-                )
-                edit_node_btn = gr.Button("✏️ Edit Node", size="sm")
-            
-            with gr.Row():
-                source_id_input = gr.Textbox(
-                    label="Source ID",
-                    placeholder="Start node ID"
-                )
-                target_id_input = gr.Textbox(
-                    label="Target ID",
-                    placeholder="End node ID"
-                )
-                edge_label_input = gr.Textbox(
-                    label="Edge Label",
-                    placeholder="Optional edge label"
-                )
-                connect_btn = gr.Button("🔗 Connect Nodes", size="sm")
-            
-            with gr.Row():
-                delete_node_input = gr.Textbox(
-                    label="Delete Node",
-                    placeholder="Node ID to delete"
-                )
-                delete_node_btn = gr.Button("🗑️ Delete Node", size="sm", variant="stop")
-            
-            # Add node type selector
-            node_type_dropdown = gr.Dropdown(
-                choices=["process", "decision", "start", "end"],
-                value="process",
-                label="New Node Type"
-            )
-            new_node_label = gr.Textbox(
-                label="New Node Label",
-                placeholder="Enter label for new node"
-            )
-            add_node_btn = gr.Button("➕ Add Node", size="sm")
-            
             gr.Markdown("### 🗣️ Natural Language Editing")
             edit_command = gr.Textbox(
                 label="Edit with Natural Language",
@@ -529,7 +482,7 @@ with gr.Blocks(title="AI Flowchart Creator", theme=gr.themes.Soft()) as demo:
             )
         
         with gr.Column(scale=2):
-            # Create the flowchart interface
+            # Create the enhanced interactive flowchart interface
             flowchart_interface, flowchart_json, flowchart_html = flowchart_creator.create_interface()
     
     # Connect the functionality
@@ -538,7 +491,7 @@ with gr.Blocks(title="AI Flowchart Creator", theme=gr.themes.Soft()) as demo:
         inputs=[text_input],
         outputs=[flowchart_json]
     ).then(
-        flowchart_creator.update_visualization,
+        flowchart_creator.update_interactive_visualization,
         inputs=[flowchart_json],
         outputs=[flowchart_html]
     )
@@ -564,7 +517,7 @@ with gr.Blocks(title="AI Flowchart Creator", theme=gr.themes.Soft()) as demo:
         inputs=[url_input],
         outputs=[flowchart_json]
     ).then(
-        flowchart_creator.update_visualization,
+        flowchart_creator.update_interactive_visualization,
         inputs=[flowchart_json],
         outputs=[flowchart_html]
     )
@@ -576,52 +529,12 @@ with gr.Blocks(title="AI Flowchart Creator", theme=gr.themes.Soft()) as demo:
     )
     
     # Connect editing functionality
-    edit_node_btn.click(
-        lambda data, id, label: flowchart_editor.edit_node(data, id, label),
-        inputs=[flowchart_json, node_id_input, new_label_input],
-        outputs=[flowchart_json]
-    ).then(
-        flowchart_creator.update_visualization,
-        inputs=[flowchart_json],
-        outputs=[flowchart_html]
-    )
-    
-    connect_btn.click(
-        lambda data, src, tgt, lbl: flowchart_editor.connect_nodes(data, src, tgt, lbl),
-        inputs=[flowchart_json, source_id_input, target_id_input, edge_label_input],
-        outputs=[flowchart_json]
-    ).then(
-        flowchart_creator.update_visualization,
-        inputs=[flowchart_json],
-        outputs=[flowchart_html]
-    )
-    
-    delete_node_btn.click(
-        lambda data, id: flowchart_editor.delete_node(data, id),
-        inputs=[flowchart_json, delete_node_input],
-        outputs=[flowchart_json]
-    ).then(
-        flowchart_creator.update_visualization,
-        inputs=[flowchart_json],
-        outputs=[flowchart_html]
-    )
-    
-    add_node_btn.click(
-        lambda data, type, label: flowchart_editor.add_node(data, type, label),
-        inputs=[flowchart_json, node_type_dropdown, new_node_label],
-        outputs=[flowchart_json]
-    ).then(
-        flowchart_creator.update_visualization,
-        inputs=[flowchart_json],
-        outputs=[flowchart_html]
-    )
-
     edit_btn.click(
         flowchart_editor.edit_with_natural_language,
         inputs=[flowchart_json, edit_command],
         outputs=[flowchart_json, edit_message]
     ).then(
-        flowchart_creator.update_visualization,
+        flowchart_creator.update_interactive_visualization,
         inputs=[flowchart_json],
         outputs=[flowchart_html]
     )
