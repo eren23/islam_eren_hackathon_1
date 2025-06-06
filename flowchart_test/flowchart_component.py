@@ -16,8 +16,158 @@ class FlowchartCreator:
     
     def create_interface(self):
         """Create the flowchart interface using built-in Gradio components"""
-        with gr.Column() as interface:
+        
+        # JavaScript that uses event delegation instead of inline handlers
+        head_js = """
+        <script>
+        console.log('🚀 Flowchart interface loading with event delegation...');
+        
+        // Global flowchart interaction handler using event delegation
+        window.flowchartHandler = {
+            init: function() {
+                console.log('🔧 Initializing flowchart event delegation...');
+                
+                // Remove any existing listeners
+                document.removeEventListener('click', this.handleClick);
+                document.removeEventListener('mousedown', this.handleMouseDown);
+                document.removeEventListener('dblclick', this.handleDoubleClick);
+                
+                // Add event listeners using delegation
+                document.addEventListener('click', this.handleClick.bind(this));
+                document.addEventListener('mousedown', this.handleMouseDown.bind(this));
+                document.addEventListener('dblclick', this.handleDoubleClick.bind(this));
+                
+                console.log('✅ Event delegation initialized');
+            },
+            
+            handleClick: function(event) {
+                const target = event.target.closest('[data-fc-action]');
+                if (!target) return;
+                
+                event.preventDefault();
+                event.stopPropagation();
+                
+                const action = target.dataset.fcAction;
+                const elementId = target.dataset.fcId;
+                const elementType = target.dataset.fcType;
+                
+                console.log('🎯 Click detected:', action, elementId, elementType);
+                
+                if (action === 'select') {
+                    this.selectElement(elementId, elementType);
+                }
+            },
+            
+            handleMouseDown: function(event) {
+                const target = event.target.closest('[data-fc-drag]');
+                if (!target) return;
+                
+                event.preventDefault();
+                
+                const elementId = target.dataset.fcId;
+                console.log('🚀 Drag started:', elementId);
+                
+                // For now, just select the element
+                this.selectElement(elementId, 'node');
+            },
+            
+            handleDoubleClick: function(event) {
+                const target = event.target.closest('[data-fc-edit]');
+                if (!target) return;
+                
+                event.preventDefault();
+                
+                const elementId = target.dataset.fcId;
+                const elementType = target.dataset.fcType;
+                
+                console.log('✏️ Double-click edit:', elementId, elementType);
+                this.selectElement(elementId, elementType);
+            },
+            
+            selectElement: function(elementId, elementType) {
+                console.log('🎯 Selecting element:', elementId, elementType);
+                
+                // Find canvas_action textarea
+                let textarea = null;
+                const canvasActionDiv = document.getElementById('canvas_action');
+                
+                if (canvasActionDiv) {
+                    textarea = canvasActionDiv.querySelector('textarea');
+                    console.log('📍 Found textarea in canvas_action:', textarea);
+                }
+                
+                if (!textarea) {
+                    // Fallback: find any hidden textarea
+                    const allTextareas = document.querySelectorAll('textarea');
+                    console.log('🔍 Looking through', allTextareas.length, 'textareas');
+                    
+                    for (let i = 0; i < allTextareas.length; i++) {
+                        const ta = allTextareas[i];
+                        const parentDiv = ta.closest('.block');
+                        if (parentDiv && (parentDiv.style.display === 'none' || 
+                            parentDiv.classList.contains('hidden'))) {
+                            textarea = ta;
+                            console.log('📍 Using fallback textarea:', textarea);
+                            break;
+                        }
+                    }
+                }
+                
+                if (textarea) {
+                    const data = JSON.stringify({
+                        type: 'select_' + elementType,
+                        id: elementId,
+                        elementType: elementType
+                    });
+                    
+                    textarea.value = data;
+                    textarea.dispatchEvent(new Event('input', {bubbles: true}));
+                    textarea.dispatchEvent(new Event('change', {bubbles: true}));
+                    textarea.focus();
+                    textarea.blur();
+                    
+                    console.log('✅ Selection data sent:', data);
+                } else {
+                    console.error('❌ Could not find canvas_action textarea');
+                    console.log('Available textareas:', document.querySelectorAll('textarea'));
+                    console.log('canvas_action div:', document.getElementById('canvas_action'));
+                }
+            }
+        };
+        
+        // Initialize when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(window.flowchartHandler.init.bind(window.flowchartHandler), 500);
+            });
+        } else {
+            setTimeout(window.flowchartHandler.init.bind(window.flowchartHandler), 500);
+        }
+        
+        // Re-initialize periodically to handle dynamic content
+        setInterval(function() {
+            if (window.flowchartHandler && !window.flowchartHandler.initialized) {
+                window.flowchartHandler.init();
+                window.flowchartHandler.initialized = true;
+            }
+        }, 2000);
+        
+        // Debug function
+        window.debugFlowchartElements = function() {
+            console.log('🔍 Debugging flowchart elements:');
+            console.log('canvas_action:', document.getElementById('canvas_action'));
+            console.log('selected_element:', document.getElementById('selected_element'));
+            console.log('All textareas:', document.querySelectorAll('textarea'));
+            console.log('Event handler initialized:', !!window.flowchartHandler.initialized);
+        };
+        </script>
+        """
+        
+        with gr.Blocks(head=head_js) as interface:
             gr.Markdown("### Interactive Flowchart Canvas")
+            
+            # Debug button for testing
+            debug_btn = gr.Button("🔍 Debug Elements", size="sm")
             
             # Hidden components for state management
             selected_element = gr.Textbox(
@@ -72,6 +222,12 @@ class FlowchartCreator:
                 label="Status",
                 value="Click on nodes or edges to select and edit them",
                 interactive=False
+            )
+            
+            # Debug button functionality
+            debug_btn.click(
+                lambda: "Debug function called - check console",
+                outputs=[status_text]
             )
             
             # Enhanced canvas interaction handling
@@ -224,425 +380,140 @@ class FlowchartCreator:
         """Update the interactive visualization"""
         return self.render_interactive_flowchart(flowchart_data, selected_element)
     
-    def render_interactive_flowchart(self, flowchart_data, selected_element=""):
-        """Render interactive flowchart with proper event handling"""
+    def _generate_svg(self, flowchart_data, canvas_id):
+        """Generate SVG content for the flowchart using data attributes for event delegation"""
         if not flowchart_data or not isinstance(flowchart_data, dict):
             return "<div>No flowchart data available</div>"
-        
-        self.canvas_id_counter += 1
-        canvas_id = f"flowchart-container-{self.canvas_id_counter}"
-        svg_id = f"flowchart-svg-{self.canvas_id_counter}"
         
         nodes = flowchart_data.get("nodes", [])
         edges = flowchart_data.get("edges", [])
         
-        # Calculate SVG dimensions
-        max_x = max([node.get("position", {}).get("x", 0) 
-                    for node in nodes] + [400])
-        max_y = max([node.get("position", {}).get("y", 0) 
-                    for node in nodes] + [500])
+        # Calculate canvas dimensions
+        max_x = max([node.get("position", {}).get("x", 0) for node in nodes] + [400])
+        max_y = max([node.get("position", {}).get("y", 0) for node in nodes] + [300])
         
-        svg_width = max_x + 250
-        svg_height = max_y + 150
+        canvas_width = max_x + 200
+        canvas_height = max_y + 200
         
-        # IMPORTANT: Define JavaScript functions FIRST
-        html = f"""
-        <script>
-        // Define functions immediately for canvas {self.canvas_id_counter}
-        (function() {{
-            console.log('Pre-defining functions for canvas {self.canvas_id_counter}...');
-            
-            // Global state for this specific canvas
-            window.fcState_{self.canvas_id_counter} = {{
-                dragging: false,
-                dragOffset: {{x: 0, y: 0}},
-                selectedElement: '{selected_element}',
-                initialized: false
-            }};
-            
-            // Find action input function
-            function findActionInput() {{
-                const inputs = document.querySelectorAll(
-                    'input[type="text"], textarea');
-                for (let input of inputs) {{
-                    if (input.id === 'canvas_action' || 
-                        (input.closest('.gradio-textbox') && 
-                         input.closest('.gradio-textbox').style.display === 'none')) {{
-                        return input;
-                    }}
-                }}
-                return null;
-            }}
-            
-            // Send action to backend
-            function sendAction(data) {{
-                const input = findActionInput();
-                if (input) {{
-                    const actionStr = JSON.stringify(data);
-                    input.value = actionStr;
-                    const event = new Event('input', {{bubbles: true}});
-                    input.dispatchEvent(event);
-                    input.dispatchEvent(new Event('change', {{bubbles: true}}));
-                    console.log('Sent action:', data);
-                    return true;
-                }} else {{
-                    console.warn('Action input not found for canvas {self.canvas_id_counter}');
-                    return false;
-                }}
-            }}
-            
-            // Element selection function - DEFINE GLOBALLY
-            window.fcSelectElement_{self.canvas_id_counter} = function(id, type) {{
-                console.log('Selecting element:', id, type, 'on canvas {self.canvas_id_counter}');
-                
-                window.fcState_{self.canvas_id_counter}.selectedElement = 
-                    `${{type}}:${{id}}`;
-                
-                sendAction({{
-                    type: type === 'node' ? 'select_node' : 'select_edge',
-                    id: id
-                }});
-            }};
-            
-            // Quick edit function - DEFINE GLOBALLY
-            window.fcQuickEdit_{self.canvas_id_counter} = function(id, type) {{
-                console.log('Quick edit:', id, type, 'on canvas {self.canvas_id_counter}');
-                sendAction({{
-                    type: 'quick_edit',
-                    elementType: type,
-                    id: id
-                }});
-            }};
-            
-            // Drag start function - DEFINE GLOBALLY
-            window.fcStartDrag_{self.canvas_id_counter} = function(event, nodeId) {{
-                console.log('Starting drag for node:', nodeId, 'on canvas {self.canvas_id_counter}');
-                event.stopPropagation();
-                event.preventDefault();
-                
-                window.fcState_{self.canvas_id_counter}.dragging = true;
-                window.fcState_{self.canvas_id_counter}.selectedElement = 
-                    `node:${{nodeId}}`;
-                
-                const node = event.currentTarget;
-                const transform = node.getAttribute('transform') || 
-                    'translate(0,0)';
-                const match = transform.match(/translate\\(([^,]+),([^)]+)\\)/);
-                const currentX = match ? parseFloat(match[1]) : 0;
-                const currentY = match ? parseFloat(match[2]) : 0;
-                
-                const svg = document.getElementById('{svg_id}');
-                if (svg) {{
-                    const rect = svg.getBoundingClientRect();
-                    window.fcState_{self.canvas_id_counter}.dragOffset.x = 
-                        event.clientX - rect.left - currentX;
-                    window.fcState_{self.canvas_id_counter}.dragOffset.y = 
-                        event.clientY - rect.top - currentY;
-                    
-                    // Add visual feedback
-                    node.style.opacity = '0.8';
-                }}
-            }};
-            
-            console.log('Functions pre-defined for canvas {self.canvas_id_counter}');
-        }})();
-        </script>
+        # Start building SVG
+        svg_parts = [
+            f'<svg id="{canvas_id}" width="{canvas_width}" height="{canvas_height}" '
+            f'style="border: 1px solid #ccc; background: #fafafa;" '
+            f'xmlns="http://www.w3.org/2000/svg">'
+        ]
         
-        <div id="{canvas_id}" class="flowchart-container" 
-             style="border: 2px solid #ddd; border-radius: 8px; 
-                    padding: 15px; background: #f9f9f9;">
-            <div style="margin-bottom: 10px; font-size: 14px; color: #666;">
-                💡 Click nodes/edges to select • Drag nodes to move • 
-                Double-click to quick edit
-            </div>
-            <div style="position: relative; overflow: hidden;">
-                <svg width="{svg_width}" height="{svg_height}" 
-                     style="background: white; border-radius: 4px; 
-                            cursor: default; display: block;"
-                     id="{svg_id}"
-                     viewBox="0 0 {svg_width} {svg_height}">
-                    
-                    <defs>
-                        <marker id="arrowhead-{self.canvas_id_counter}" 
-                                markerWidth="10" markerHeight="7" 
-                                refX="10" refY="3.5" orient="auto" 
-                                markerUnits="strokeWidth">
-                            <polygon points="0 0, 10 3.5, 0 7" fill="#666" />
-                        </marker>
-                        <marker id="arrowhead-selected-{self.canvas_id_counter}" 
-                                markerWidth="10" markerHeight="7" 
-                                refX="10" refY="3.5" orient="auto" 
-                                markerUnits="strokeWidth">
-                            <polygon points="0 0, 10 3.5, 0 7" 
-                                     fill="#0066cc" />
-                        </marker>
-                    </defs>
-        """
+        # Add arrow marker definition
+        svg_parts.append("""
+            <defs>
+                <marker id="arrowhead" markerWidth="10" markerHeight="7" 
+                        refX="9" refY="3.5" orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" fill="#666" />
+                </marker>
+            </defs>
+        """)
         
-        # Draw edges with simpler event handling
+        # Draw edges first (so they appear behind nodes)
         for edge in edges:
-            source_node = next((n for n in nodes 
-                              if n["id"] == edge["source"]), None)
-            target_node = next((n for n in nodes 
-                              if n["id"] == edge["target"]), None)
+            source_node = next((n for n in nodes if n["id"] == edge["source"]), None)
+            target_node = next((n for n in nodes if n["id"] == edge["target"]), None)
             
             if source_node and target_node:
-                x1 = source_node["position"]["x"] + 75
-                y1 = source_node["position"]["y"] + 30
-                x2 = target_node["position"]["x"] + 75
-                y2 = target_node["position"]["y"] + 10
+                source_pos = source_node.get("position", {})
+                target_pos = target_node.get("position", {})
                 
-                is_selected = selected_element == f"edge:{edge['id']}"
-                edge_style = ("stroke: #0066cc; stroke-width: 3;" 
-                             if is_selected 
-                             else "stroke: #666; stroke-width: 2;")
-                marker = (f"url(#arrowhead-selected-{self.canvas_id_counter})" 
-                         if is_selected 
-                         else f"url(#arrowhead-{self.canvas_id_counter})")
+                x1 = source_pos.get("x", 0) + 50  # Center of node
+                y1 = source_pos.get("y", 0) + 25
+                x2 = target_pos.get("x", 0) + 50
+                y2 = target_pos.get("y", 0) + 25
                 
-                # Use data attributes and class-based event handling
-                html += f"""
-                    <g class="edge fc-edge-{self.canvas_id_counter}" 
-                       data-edge-id="{edge['id']}" 
-                       data-canvas-id="{self.canvas_id_counter}"
+                edge_id = edge.get("id", "")
+                edge_label = edge.get("label", "")
+                
+                # Calculate label position
+                label_x = (x1 + x2) / 2
+                label_y = (y1 + y2) / 2 - 10
+                
+                # Create edge group with data attributes for event delegation
+                edge_text = (f'<text x="{label_x}" y="{label_y}" '
+                           f'text-anchor="middle" font-size="12" fill="#444">'
+                           f'{edge_label}</text>') if edge_label else ''
+                
+                svg_parts.append(f'''
+                    <g class="edge" 
+                       data-fc-action="select" 
+                       data-fc-id="{edge_id}" 
+                       data-fc-type="edge"
                        style="cursor: pointer;">
                         <line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" 
-                              style="{edge_style}" marker-end="{marker}" />
-                """
-                
-                if edge.get("label"):
-                    mid_x = (x1 + x2) / 2
-                    mid_y = (y1 + y2) / 2 - 8
-                    label_bg = "#e3f2fd" if is_selected else "white"
-                    html += f"""
-                        <rect x="{mid_x - len(edge['label']) * 3}" 
-                              y="{mid_y - 10}" 
-                              width="{len(edge['label']) * 6}" height="16" 
-                              fill="{label_bg}" stroke="#ddd" rx="3" />
-                        <text x="{mid_x}" y="{mid_y}" text-anchor="middle" 
-                              fill="#333" font-size="12" font-family="Arial"
-                              style="pointer-events: none;">
-                            {edge['label']}
-                        </text>
-                    """
-                
-                html += "</g>"
+                              stroke="#666" stroke-width="2" 
+                              marker-end="url(#arrowhead)" />
+                        {edge_text}
+                    </g>
+                ''')
         
-        # Draw nodes with class-based event handling
+        # Draw nodes
         for node in nodes:
-            x = node["position"]["x"]
-            y = node["position"]["y"]
-            label = node["data"]["label"]
-            node_type = node.get("type", "process")
-            node_id = node["id"]
+            node_id = node.get("id", "")
+            node_type = node.get("type", "default")
+            position = node.get("position", {})
+            label = node.get("data", {}).get("label", "")
             
-            is_selected = selected_element == f"node:{node_id}"
+            x = position.get("x", 0)
+            y = position.get("y", 0)
             
-            html += f"""
-            <g class="node fc-node-{self.canvas_id_counter}" 
-               data-node-id="{node_id}" 
-               data-canvas-id="{self.canvas_id_counter}"
-               transform="translate({x},{y})"
-               style="cursor: move;">
-            """
-            
-            # Node shapes with selection highlighting
-            if node_type in ("start", "end"):
-                fill_color = "#1976d2" if is_selected else "#e1f5fe"
-                stroke_color = "#0d47a1" if is_selected else "#01579b"
-                text_color = "white" if is_selected else "#333"
-                html += f"""
-                    <rect x="0" y="0" width="150" height="40" rx="20" ry="20"
-                          fill="{fill_color}" stroke="{stroke_color}" 
-                          stroke-width="2" />
-                """
+            # Node styling based on type
+            if node_type == "start":
+                shape = (f'<ellipse cx="{x + 50}" cy="{y + 25}" rx="50" ry="25" '
+                        f'fill="#4CAF50" stroke="#388E3C" stroke-width="2" />')
+                text_color = "white"
+            elif node_type == "end":
+                shape = (f'<ellipse cx="{x + 50}" cy="{y + 25}" rx="50" ry="25" '
+                        f'fill="#F44336" stroke="#D32F2F" stroke-width="2" />')
+                text_color = "white"
             elif node_type == "decision":
-                fill_color = "#f57c00" if is_selected else "#fff3e0"
-                stroke_color = "#e65100" if is_selected else "#f57c00"
-                text_color = "white" if is_selected else "#333"
-                cx, cy = 75, 20
-                html += f"""
-                    <polygon points="{cx},0 150,{cy} {cx},40 0,{cy}"
-                             fill="{fill_color}" stroke="{stroke_color}" 
-                             stroke-width="2" />
-                """
-            else:
-                fill_color = "#7b1fa2" if is_selected else "#f3e5f5"
-                stroke_color = "#4a148c" if is_selected else "#7b1fa2"
-                text_color = "white" if is_selected else "#333"
-                html += f"""
-                    <rect x="0" y="0" width="150" height="40"
-                          fill="{fill_color}" stroke="{stroke_color}" 
-                          stroke-width="2" />
-                """
+                # Diamond shape
+                points = f"{x + 50},{y} {x + 100},{y + 25} {x + 50},{y + 50} {x},{y + 25}"
+                shape = (f'<polygon points="{points}" fill="#FF9800" '
+                        f'stroke="#F57C00" stroke-width="2" />')
+                text_color = "white"
+            else:  # process
+                shape = (f'<rect x="{x}" y="{y}" width="100" height="50" rx="5" '
+                        f'fill="#2196F3" stroke="#1976D2" stroke-width="2" />')
+                text_color = "white"
             
-            html += f"""
-                <text x="75" y="25" text-anchor="middle" 
-                      fill="{text_color}" font-size="13" 
-                      font-family="Arial, sans-serif"
-                      font-weight="bold" style="pointer-events: none;">
-                    {label[:18]}{'...' if len(label) > 18 else ''}
-                </text>
-            </g>
-            """
+            # Create node group with data attributes for event delegation
+            svg_parts.append(f'''
+                <g class="node" 
+                   data-fc-action="select" 
+                   data-fc-id="{node_id}" 
+                   data-fc-type="node"
+                   data-fc-drag="true"
+                   data-fc-edit="true"
+                   style="cursor: pointer;">
+                    {shape}
+                    <text x="{x + 50}" y="{y + 30}" text-anchor="middle" 
+                          font-size="12" fill="{text_color}" font-weight="bold">
+                        {label}
+                    </text>
+                </g>
+            ''')
         
-        # Close SVG and add event listeners with proper initialization
-        html += f"""
-                </svg>
-            </div>
-        </div>
+        svg_parts.append('</svg>')
         
-        <script>
-        // Set up event listeners after DOM is ready
-        (function() {{
-            console.log('Setting up event listeners for canvas {self.canvas_id_counter}...');
-            
-            function initializeCanvas() {{
-                const container = document.getElementById('{canvas_id}');
-                if (!container) {{
-                    console.log('Container not ready, retrying...');
-                    setTimeout(initializeCanvas, 50);
-                    return;
-                }}
-                
-                if (window.fcState_{self.canvas_id_counter}.initialized) {{
-                    console.log('Canvas {self.canvas_id_counter} already initialized');
-                    return;
-                }}
-                
-                // Mouse move handler
-                function handleMouseMove(event) {{
-                    if (!window.fcState_{self.canvas_id_counter}.dragging || 
-                        !window.fcState_{self.canvas_id_counter}.selectedElement.startsWith('node:')) {{
-                        return;
-                    }}
-                    
-                    const nodeId = window.fcState_{self.canvas_id_counter}.selectedElement.split(':')[1];
-                    const svg = document.getElementById('{svg_id}');
-                    if (!svg) return;
-                    
-                    const rect = svg.getBoundingClientRect();
-                    const x = Math.max(0, Math.min({svg_width - 150}, 
-                        event.clientX - rect.left - 
-                        window.fcState_{self.canvas_id_counter}.dragOffset.x));
-                    const y = Math.max(0, Math.min({svg_height - 40}, 
-                        event.clientY - rect.top - 
-                        window.fcState_{self.canvas_id_counter}.dragOffset.y));
-                    
-                    const node = document.querySelector(
-                        `#{canvas_id} [data-node-id="${{nodeId}}"]`);
-                    if (node) {{
-                        node.setAttribute('transform', `translate(${{x}},${{y}})`);
-                    }}
-                }}
-                
-                // Mouse up handler
-                function handleMouseUp(event) {{
-                    if (window.fcState_{self.canvas_id_counter}.dragging && 
-                        window.fcState_{self.canvas_id_counter}.selectedElement.startsWith('node:')) {{
-                        
-                        const nodeId = window.fcState_{self.canvas_id_counter}.selectedElement.split(':')[1];
-                        const svg = document.getElementById('{svg_id}');
-                        if (svg) {{
-                            const rect = svg.getBoundingClientRect();
-                            const x = Math.max(0, Math.min({svg_width - 150}, 
-                                event.clientX - rect.left - 
-                                window.fcState_{self.canvas_id_counter}.dragOffset.x));
-                            const y = Math.max(0, Math.min({svg_height - 40}, 
-                                event.clientY - rect.top - 
-                                window.fcState_{self.canvas_id_counter}.dragOffset.y));
-                            
-                            const input = document.querySelector('input[id="canvas_action"], textarea[style*="display: none"]');
-                            if (input) {{
-                                input.value = JSON.stringify({{
-                                    type: 'move_node',
-                                    id: nodeId,
-                                    x: x,
-                                    y: y
-                                }});
-                                input.dispatchEvent(new Event('input', {{bubbles: true}}));
-                                input.dispatchEvent(new Event('change', {{bubbles: true}}));
-                            }}
-                            
-                            // Restore visual state
-                            const node = document.querySelector(
-                                `#{canvas_id} [data-node-id="${{nodeId}}"]`);
-                            if (node) {{
-                                node.style.opacity = '1';
-                            }}
-                        }}
-                    }}
-                    window.fcState_{self.canvas_id_counter}.dragging = false;
-                }}
-                
-                // Add delegated event listeners
-                container.addEventListener('click', function(event) {{
-                    const edge = event.target.closest('.fc-edge-{self.canvas_id_counter}');
-                    const node = event.target.closest('.fc-node-{self.canvas_id_counter}');
-                    
-                    if (edge) {{
-                        const edgeId = edge.getAttribute('data-edge-id');
-                        if (edgeId && window.fcSelectElement_{self.canvas_id_counter}) {{
-                            window.fcSelectElement_{self.canvas_id_counter}(edgeId, 'edge');
-                        }}
-                    }} else if (node) {{
-                        const nodeId = node.getAttribute('data-node-id');
-                        if (nodeId && window.fcSelectElement_{self.canvas_id_counter}) {{
-                            window.fcSelectElement_{self.canvas_id_counter}(nodeId, 'node');
-                        }}
-                    }} else if (event.target.id === '{svg_id}') {{
-                        // Deselect
-                        window.fcState_{self.canvas_id_counter}.selectedElement = '';
-                        const input = document.querySelector('input[id="canvas_action"], textarea[style*="display: none"]');
-                        if (input) {{
-                            input.value = JSON.stringify({{type: 'deselect'}});
-                            input.dispatchEvent(new Event('input', {{bubbles: true}}));
-                        }}
-                    }}
-                }});
-                
-                container.addEventListener('dblclick', function(event) {{
-                    const edge = event.target.closest('.fc-edge-{self.canvas_id_counter}');
-                    const node = event.target.closest('.fc-node-{self.canvas_id_counter}');
-                    
-                    if (edge) {{
-                        const edgeId = edge.getAttribute('data-edge-id');
-                        if (edgeId && window.fcQuickEdit_{self.canvas_id_counter}) {{
-                            window.fcQuickEdit_{self.canvas_id_counter}(edgeId, 'edge');
-                        }}
-                    }} else if (node) {{
-                        const nodeId = node.getAttribute('data-node-id');
-                        if (nodeId && window.fcQuickEdit_{self.canvas_id_counter}) {{
-                            window.fcQuickEdit_{self.canvas_id_counter}(nodeId, 'node');
-                        }}
-                    }}
-                }});
-                
-                container.addEventListener('mousedown', function(event) {{
-                    const node = event.target.closest('.fc-node-{self.canvas_id_counter}');
-                    if (node) {{
-                        const nodeId = node.getAttribute('data-node-id');
-                        if (nodeId && window.fcStartDrag_{self.canvas_id_counter}) {{
-                            window.fcStartDrag_{self.canvas_id_counter}(event, nodeId);
-                        }}
-                    }}
-                }});
-                
-                // Attach global event listeners
-                document.addEventListener('mousemove', handleMouseMove);
-                document.addEventListener('mouseup', handleMouseUp);
-                
-                window.fcState_{self.canvas_id_counter}.initialized = true;
-                console.log('Canvas {self.canvas_id_counter} initialized successfully');
-            }}
-            
-            // Start initialization
-            initializeCanvas();
-        }})();
-        </script>
-        """
+        return ''.join(svg_parts)
+
+    def render_interactive_flowchart(self, flowchart_data, selected_element=""):
+        """Render interactive flowchart with event delegation (no inline JavaScript needed)"""
+        if not flowchart_data or not isinstance(flowchart_data, dict):
+            return "<div>No flowchart data available</div>"
         
-        return html
+        self.canvas_id_counter += 1
+        canvas_id = f"canvas_{self.canvas_id_counter}"
+        
+        # Generate SVG with data attributes (no JavaScript needed here)
+        svg_content = self._generate_svg(flowchart_data, canvas_id)
+        
+        return svg_content
 
     def scrape_website_content(self, url):
         """Scrape and extract only relevant content from website"""
