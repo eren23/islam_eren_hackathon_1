@@ -19,10 +19,11 @@ class FlowchartNLP:
                 messages=[{
                     "role": "system",
                     "content": (
-                        "You are a flowchart editing assistant. Parse the command and return ONLY a JSON object "
-                        "that matches this schema:\n"
+                        "You are a flowchart editing assistant. Parse the command "
+                        "and return ONLY a JSON object that matches this schema:\n"
                         "{\n"
-                        '  "operation": "add_node|edit_node|delete_node|connect_nodes|delete_edge",\n'
+                        '  "operation": "add_node|edit_node|delete_node|'
+                        'connect_nodes|delete_edge",\n'
                         '  "node": {  // for add_node\n'
                         '    "id": "string",\n'
                         '    "type": "process|decision|start|end",\n'
@@ -39,12 +40,15 @@ class FlowchartNLP:
                         '  },\n'
                         '  "edge_id": "string"  // for delete_edge\n'
                         "}\n"
-                        'Example: {"operation": "add_node", "node": {"id": "3", "type": "decision", '
-                        '"position": {"x": 150, "y": 250}, "data": {"label": "Check temperature"}}}'
+                        'Example: {"operation": "add_node", '
+                        '"node": {"id": "3", "type": "decision", '
+                        '"position": {"x": 150, "y": 250}, '
+                        '"data": {"label": "Check temperature"}}}'
                     )
                 }, {
                     "role": "user",
-                    "content": f"Current flowchart: {json.dumps(flowchart_data)}\n\nCommand: {command}"
+                    "content": (f"Current flowchart: {json.dumps(flowchart_data)}\n\n"
+                               f"Command: {command}")
                 }],
                 temperature=0.1,
                 max_tokens=500,
@@ -111,7 +115,8 @@ class FlowchartNLP:
                     }
                 
                 flowchart_data["nodes"] = flowchart_data.get("nodes", []) + [node]
-                return flowchart_data, f"Added new {node['type']} node: {node['data']['label']}"
+                return (flowchart_data, 
+                       f"Added new {node['type']} node: {node['data']['label']}")
 
             elif op_type == "edit_node":
                 node_id = operation.get("node_id")
@@ -121,7 +126,9 @@ class FlowchartNLP:
                     if node["id"] == node_id:
                         old_label = node["data"]["label"]
                         node["data"]["label"] = new_label
-                        return flowchart_data, f"Updated node {node_id} from '{old_label}' to '{new_label}'"
+                        return (flowchart_data, 
+                               f"Updated node {node_id} from '{old_label}' "
+                               f"to '{new_label}'")
                 
                 return flowchart_data, f"Node {node_id} not found"
 
@@ -131,16 +138,21 @@ class FlowchartNLP:
                 edges = flowchart_data.get("edges", [])
                 
                 # Find node to delete
-                node_to_delete = next((n for n in nodes if n["id"] == node_id), None)
+                node_to_delete = next((n for n in nodes if n["id"] == node_id), 
+                                    None)
                 if not node_to_delete:
                     return flowchart_data, f"Node {node_id} not found"
                 
                 # Remove node and connected edges
-                flowchart_data["nodes"] = [n for n in nodes if n["id"] != node_id]
-                flowchart_data["edges"] = [e for e in edges 
-                                         if e["source"] != node_id and e["target"] != node_id]
+                flowchart_data["nodes"] = [n for n in nodes 
+                                         if n["id"] != node_id]
+                flowchart_data["edges"] = [
+                    e for e in edges 
+                    if e["source"] != node_id and e["target"] != node_id
+                ]
                 
-                return flowchart_data, f"Deleted node {node_id} and its connections"
+                return (flowchart_data, 
+                       f"Deleted node {node_id} and its connections")
 
             elif op_type == "connect_nodes":
                 edge = operation.get("edge", {})
@@ -166,8 +178,10 @@ class FlowchartNLP:
                     "target": target_id,
                     "label": label
                 }
-                flowchart_data["edges"] = flowchart_data.get("edges", []) + [new_edge]
-                return flowchart_data, f"Connected node {source_id} to node {target_id}"
+                flowchart_data["edges"] = (flowchart_data.get("edges", []) + 
+                                          [new_edge])
+                return (flowchart_data, 
+                       f"Connected node {source_id} to node {target_id}")
 
             elif op_type == "delete_edge":
                 edge_id = operation.get("edge_id")
@@ -175,7 +189,8 @@ class FlowchartNLP:
                     return flowchart_data, "No edge ID provided"
                 
                 original_edges = flowchart_data.get("edges", [])
-                flowchart_data["edges"] = [e for e in original_edges if e["id"] != edge_id]
+                flowchart_data["edges"] = [e for e in original_edges 
+                                         if e["id"] != edge_id]
                 
                 if len(flowchart_data["edges"]) < len(original_edges):
                     return flowchart_data, f"Deleted edge {edge_id}"
@@ -195,7 +210,8 @@ class FlowchartNLP:
                 messages=[{
                     "role": "system",
                     "content": (
-                        "Analyze the flowchart and suggest specific improvements. Consider:\n"
+                        "Analyze the flowchart and suggest specific improvements. "
+                        "Consider:\n"
                         "1. Missing decision points or error handling\n"
                         "2. Unclear or ambiguous steps\n"
                         "3. Potential parallel processes\n"
