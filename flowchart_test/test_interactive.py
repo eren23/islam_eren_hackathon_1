@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import json
 from flowchart_component import FlowchartCreator
 
 def test_canvas_creation():
@@ -42,6 +41,7 @@ def test_canvas_creation():
         print("❌ Event delegation classes missing")
     
     print("\nTest completed!")
+
 
 if __name__ == "__main__":
     test_canvas_creation() 

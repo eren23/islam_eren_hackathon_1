@@ -1,0 +1,1 @@
+We started to prepare it for the hf hackathon but didn't really finish both in time, flowchart generation is somewhat working but not fully, route planner is a mess.

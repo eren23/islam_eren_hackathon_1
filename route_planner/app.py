@@ -1,47 +1,76 @@
-from flask import Flask, request, jsonify, render_template
-from openai import OpenAI
-import googlemaps
-from dotenv import load_dotenv
-import os
-import json
-from geopy.geocoders import Nominatim
-from geopy.distance import geodesic
+"""Route Planner Flask Application."""
+
 from datetime import datetime
-import random
+from typing import Dict, Tuple
+import json
+import os
+
+from dotenv import load_dotenv
+from flask import Flask, request, jsonify, render_template
+from geopy.distance import geodesic
+from geopy.geocoders import Nominatim
+import googlemaps
+from openai import OpenAI
 import overpy
-import requests
-import math
 
 load_dotenv()
 
 app = Flask(__name__)
 
+
 # Initialize OpenAI client with OpenRouter
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+if not OPENROUTER_API_KEY:
+    raise ValueError("OPENROUTER_API_KEY not found in environment variables")
+
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
+    api_key=OPENROUTER_API_KEY,
 )
+
 
 # Initialize mapping clients based on MODE
 MAP_MODE = os.getenv("MAP_MODE", "osm")
 if MAP_MODE == "google":
-    gmaps = googlemaps.Client(key=os.getenv("GOOGLE_MAPS_API_KEY"))
+    GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+    if not GOOGLE_MAPS_API_KEY:
+        msg = (
+            "GOOGLE_MAPS_API_KEY not found in environment variables "
+            "with MAP_MODE='google'"
+        )
+        raise ValueError(msg)
+    gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 else:
     geolocator = Nominatim(user_agent="route_planner")
 
-# Add this after other initializations
+
+# Initialize Overpass API client
 overpass_api = overpy.Overpass()
 
+
 @app.route('/')
-def index():
-    return render_template('index.html', 
-                         map_mode=MAP_MODE,
-                         google_maps_api_key=os.getenv("GOOGLE_MAPS_API_KEY"))
+def index() -> str:
+    """Render the main page."""
+    return render_template(
+        'index.html',
+        map_mode=MAP_MODE,
+        google_maps_api_key=os.getenv("GOOGLE_MAPS_API_KEY")
+    )
+
 
 @app.route('/plan_route', methods=['POST'])
-def plan_route():
+def plan_route() -> Tuple[Dict, int]:
+    """Handle route planning requests."""
     user_request = request.json.get('request')
     location = request.json.get('location')
+
+    if not user_request or not location:
+        return jsonify({
+            'error': 'Missing request or location data',
+            'route': [],
+            'stops': [],
+            'map_mode': MAP_MODE
+        }), 400
 
     try:
         # Use LLM to understand the request and extract key information
@@ -54,7 +83,11 @@ def plan_route():
             messages=[
                 {
                     "role": "system",
-                    "content": "Extract route information and return ONLY a JSON object with these exact fields: total_distance_km (number), stop_type (string), stop_at_km (number). For example: {\"total_distance_km\": 10.0, \"stop_type\": \"bar\", \"stop_at_km\": 5.0}"
+                    "content": (
+                        "Extract route information and return ONLY a JSON object with "
+                        "these exact fields: total_distance_km (number), stop_type "
+                        "(string), stop_at_km (number)."
+                    )
                 },
                 {
                     "role": "user",
@@ -68,7 +101,9 @@ def plan_route():
             route_requirements = json.loads(completion.choices[0].message.content)
             # Ensure all required fields exist with proper types
             route_requirements = {
-                'total_distance_km': float(route_requirements.get('total_distance_km', 10.0)),
+                'total_distance_km': float(
+                    route_requirements.get('total_distance_km', 10.0)
+                ),
                 'stop_type': str(route_requirements.get('stop_type', 'bar')),
                 'stop_at_km': float(route_requirements.get('stop_at_km', 5.0))
             }
@@ -82,8 +117,8 @@ def plan_route():
 
         if MAP_MODE == "google":
             return handle_google_maps_route(location, route_requirements)
-        else:
-            return handle_osm_route(location, route_requirements)
+        
+        return handle_osm_route(location, route_requirements)
             
     except Exception as e:
         return jsonify({

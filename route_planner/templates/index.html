@@ -1,6 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Route Planner</title>
     {% if map_mode == 'google' %}
     <script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}"></script>
@@ -9,28 +11,102 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     {% endif %}
     <style>
+        :root {
+            --primary-color: #4CAF50;
+            --secondary-color: #666;
+            --background-color: #f5f5f5;
+            --text-color: #333;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: var(--background-color);
+            color: var(--text-color);
+        }
+
         #map {
             height: 500px;
             width: 100%;
             margin-top: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
+
         .container {
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
         }
+
+        h1 {
+            color: var(--primary-color);
+            margin-bottom: 1.5rem;
+        }
+
         textarea {
             width: 100%;
             height: 100px;
-            margin-bottom: 10px;
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+            resize: vertical;
         }
+
         .controls {
-            margin-bottom: 20px;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
+
         .location-info {
-            margin-top: 10px;
+            margin-top: 0.5rem;
             font-size: 0.9em;
-            color: #666;
+            color: var(--secondary-color);
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        label {
+            margin-right: 1rem;
+            cursor: pointer;
+        }
+
+        input[type="radio"] {
+            margin-right: 0.5rem;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 10px;
+            }
+
+            #map {
+                height: 400px;
+            }
+
+            textarea {
+                height: 80px;
+            }
         }
     </style>
 </head>
@@ -39,14 +115,19 @@
         <h1>Route Planner ({{ map_mode|upper }})</h1>
         <div class="controls">
             <label>
-                <input type="radio" name="locationMode" value="auto" checked onchange="toggleLocationMode()"> Use my location
+                <input type="radio" name="locationMode" value="auto" checked onchange="toggleLocationMode()"> 
+                Use my location
             </label>
             <label>
-                <input type="radio" name="locationMode" value="manual" onchange="toggleLocationMode()"> Select on map
+                <input type="radio" name="locationMode" value="manual" onchange="toggleLocationMode()"> 
+                Select on map
             </label>
             <div class="location-info" id="locationInfo"></div>
         </div>
-        <textarea id="routeRequest" placeholder="Describe your route requirements (e.g., 'I want to ride my bike for 10km with a beer break at 5km')"></textarea>
+        <textarea 
+            id="routeRequest" 
+            placeholder="Describe your route requirements (e.g., 'I want to ride my bike for 10km with a beer break at 5km')"
+        ></textarea>
         <button onclick="planRoute()">Plan Route</button>
         <div id="map"></div>
     </div>
@@ -60,11 +141,7 @@
         let selectedLocation = null;
 
         function initMap() {
-            if (mapMode === 'google') {
-                initGoogleMap();
-            } else {
-                initLeafletMap();
-            }
+            mapMode === 'google' ? initGoogleMap() : initLeafletMap();
         }
 
         function initGoogleMap() {
@@ -75,7 +152,7 @@
 
             map.addListener('click', function(e) {
                 if (document.querySelector('input[name="locationMode"]:checked').value === 'manual') {
-                    placeStartMarker(e.latLng.lat, e.latLng.lng);
+                    placeStartMarker(e.latLng.lat(), e.latLng.lng());
                 }
             });
 
@@ -118,19 +195,15 @@
 
         function placeStartMarker(lat, lng) {
             if (startMarker) {
-                if (mapMode === 'google') {
-                    startMarker.setMap(null);
-                } else {
-                    map.removeLayer(startMarker);
-                }
+                mapMode === 'google' ? startMarker.setMap(null) : map.removeLayer(startMarker);
             }
 
-            selectedLocation = { lat: lat, lng: lng };
+            selectedLocation = { lat, lng };
             updateLocationInfo();
 
             if (mapMode === 'google') {
                 startMarker = new google.maps.Marker({
-                    position: { lat: lat, lng: lng },
+                    position: { lat, lng },
                     map: map,
                     title: 'Start Point',
                     icon: {
@@ -146,11 +219,9 @@
 
         function updateLocationInfo() {
             const info = document.getElementById('locationInfo');
-            if (selectedLocation) {
-                info.textContent = `Selected start point: ${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`;
-            } else {
-                info.textContent = 'No start point selected';
-            }
+            info.textContent = selectedLocation 
+                ? `Selected start point: ${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`
+                : 'No start point selected';
         }
 
         function toggleLocationMode() {
@@ -161,11 +232,7 @@
                 });
             } else if (mode === 'manual') {
                 if (startMarker) {
-                    if (mapMode === 'google') {
-                        startMarker.setMap(null);
-                    } else {
-                        map.removeLayer(startMarker);
-                    }
+                    mapMode === 'google' ? startMarker.setMap(null) : map.removeLayer(startMarker);
                     startMarker = null;
                     selectedLocation = null;
                     updateLocationInfo();
@@ -181,28 +248,28 @@
 
             const request = document.getElementById('routeRequest').value;
             
-            const response = await fetch('/plan_route', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    request: request,
-                    location: selectedLocation
-                })
-            });
+            try {
+                const response = await fetch('/plan_route', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        request,
+                        location: selectedLocation
+                    })
+                });
 
-            const data = await response.json();
-            
-            if (data.error) {
-                alert('Error planning route: ' + data.error);
-                return;
-            }
+                const data = await response.json();
+                
+                if (data.error) {
+                    alert('Error planning route: ' + data.error);
+                    return;
+                }
 
-            if (mapMode === 'google') {
-                displayGoogleRoute(data);
-            } else {
-                displayLeafletRoute(data);
+                mapMode === 'google' ? displayGoogleRoute(data) : displayLeafletRoute(data);
+            } catch (error) {
+                alert('Error communicating with server: ' + error.message);
             }
         }
 
